@@ -1,0 +1,49 @@
+### ===================================
+### TESTES API CAMPUSTRADE — AZURE
+### ===================================
+
+### SUBSTITUA pela sua URL real!
+@azureUrl = https://campustrade-seunome.azurewebsites.net
+
+
+### 1. Health check no Azure
+GET {{azureUrl}}/health
+
+### 2. Página inicial
+GET {{azureUrl}}/
+
+### 3. Acessar documentação Swagger
+GET {{azureUrl}}/docs
+
+### 4. Listar produtos (vazio — é uma nova instância)
+GET {{azureUrl}}/produtos
+
+### 5. Criar produto no Azure
+POST {{azureUrl}}/produtos
+Content-Type: application/json
+
+{
+    "titulo": "Livro de Cálculo I",
+    "descricao": "Stewart, 7ª edição. Algumas anotações a lápis, bom estado.",
+    "preco": 90.00,
+    "categoria": "Livros",
+    "vendedor": "Pedro Oliveira"
+}
+
+### 6. Criar segundo produto no Azure
+POST {{azureUrl}}/produtos
+Content-Type: application/json
+
+{
+    "titulo": "Notebook Dell Inspiron",
+    "descricao": "i5 11ª geração, 8GB RAM, SSD 256GB. Ótimo para estudos.",
+    "preco": 1500.00,
+    "categoria": "Eletrônicos",
+    "vendedor": "Lucas Santos"
+}
+
+### 7. Listar produtos criados
+GET {{azureUrl}}/produtos
+
+### 8. Buscar por ID
+GET {{azureUrl}}/produtos/1
