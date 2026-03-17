@@ -1,8 +1,19 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from .schemas import ProdutoCreate, ProdutoResponse
+from .schemas import (
+    ProdutoCreate, ProdutoResponse, ProdutoUpdate,
+    CategoriaCreate, CategoriaResponse
+)
 from datetime import datetime
 from typing import List
+
+from sqlalchemy.orm import Session
+from .database import engine, get_db, Base
+from .models import Produto, Categoria
+
+
+# --- Criar tabelas automaticamente na primeira execução ---
+Base.metadata.create_all(bind=engine)
 
 
 # --- Configuração do App ---
@@ -10,94 +21,173 @@ from typing import List
 app = FastAPI(
     title="CampusTrade API",
     description="Marketplace universitário — Projeto de Cloud IBMEC",
-    version="1.0.0"
+    version="2.0.0"
 )
 
-# CORS: permite que o frontend (React) acesse esta API.
-# Sem isso, o navegador bloqueia as requisições.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # Em produção, restrinja ao domínio do frontend
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# --- "Banco de dados" em memória (temporário) ---
-# Na próxima oficina, substituiremos por Azure SQL Database.
+# ─────────────────────────────────────────────
+# Endpoints Gerais
+# ─────────────────────────────────────────────
 
-produtos_db: list = []
-next_id: int = 1
-
-
-# --- Endpoints ---
-
-@app.get("/health")
+@app.get("/health", tags=["Geral"])
 def health_check():
-    """
-    Endpoint de saúde — o Azure usa para verificar se a app está viva.
-    Se este endpoint parar de responder, o Azure reinicia a aplicação.
-    """
+    """Endpoint de saúde — o Azure usa para verificar se a app está viva."""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-@app.get("/")
+@app.get("/", tags=["Geral"])
 def root():
     """Página inicial da API."""
     return {
         "aplicacao": "CampusTrade API",
-        "versao": "1.0.0",
+        "versao": "2.0.0",
         "documentacao": "/docs"
     }
 
 
-@app.get("/produtos", response_model=List[ProdutoResponse])
-def listar_produtos():
+# ─────────────────────────────────────────────
+# Endpoints de CATEGORIAS
+# ─────────────────────────────────────────────
+
+@app.get("/categorias", response_model=List[CategoriaResponse], tags=["Categorias"])
+def listar_categorias(db: Session = Depends(get_db)):
+    """Lista todas as categorias cadastradas."""
+    return db.query(Categoria).all()
+
+
+@app.post("/categorias", response_model=CategoriaResponse, status_code=201, tags=["Categorias"])
+def criar_categoria(categoria: CategoriaCreate, db: Session = Depends(get_db)):
+    """
+    Cria uma nova categoria.
+    Valida se o nome já existe (UNIQUE) — retorna 409 se duplicado.
+    """
+    existente = db.query(Categoria).filter(Categoria.nome == categoria.nome).first()
+    if existente:
+        raise HTTPException(status_code=409, detail=f"Categoria '{categoria.nome}' já existe")
+
+    nova_categoria = Categoria(
+        nome=categoria.nome,
+        descricao=categoria.descricao
+    )
+    db.add(nova_categoria)
+    db.commit()
+    db.refresh(nova_categoria)
+    return nova_categoria
+
+
+@app.get("/categorias/{categoria_id}", response_model=CategoriaResponse, tags=["Categorias"])
+def buscar_categoria(categoria_id: int, db: Session = Depends(get_db)):
+    """Busca uma categoria pelo ID."""
+    categoria = db.query(Categoria).filter(Categoria.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    return categoria
+
+
+@app.delete("/categorias/{categoria_id}", tags=["Categorias"])
+def deletar_categoria(categoria_id: int, db: Session = Depends(get_db)):
+    """Remove uma categoria. Produtos vinculados ficam com categoria_id = NULL."""
+    categoria = db.query(Categoria).filter(Categoria.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    db.delete(categoria)
+    db.commit()
+    return {"message": "Categoria removida com sucesso", "id": categoria_id}
+
+
+# ─────────────────────────────────────────────
+# Endpoints de PRODUTOS
+# ─────────────────────────────────────────────
+
+@app.get("/produtos", response_model=List[ProdutoResponse], tags=["Produtos"])
+def listar_produtos(categoria_id: int = None, db: Session = Depends(get_db)):
     """
     Lista todos os produtos cadastrados.
-    O response_model garante que a resposta segue o schema ProdutoResponse.
+    Aceita filtro opcional por categoria: GET /produtos?categoria_id=1
     """
-    return produtos_db
+    query = db.query(Produto)
+    if categoria_id is not None:
+        query = query.filter(Produto.categoria_id == categoria_id)
+    return query.all()
 
 
-@app.post("/produtos", response_model=ProdutoResponse, status_code=201)
-def criar_produto(produto: ProdutoCreate):
+@app.post("/produtos", response_model=ProdutoResponse, status_code=201, tags=["Produtos"])
+def criar_produto(produto: ProdutoCreate, db: Session = Depends(get_db)):
     """
-    Cria um novo produto.
-    - O Pydantic valida os dados automaticamente (tipo, tamanho, valor).
-    - Se algo estiver errado, retorna 422 com detalhes do erro.
-    - status_code=201 indica que um recurso foi criado (boa prática REST).
+    Cria um novo produto no banco.
+    Se informado categoria_id, valida se a categoria existe.
     """
-    global next_id
+    if produto.categoria_id is not None:
+        categoria = db.query(Categoria).filter(Categoria.id == produto.categoria_id).first()
+        if not categoria:
+            raise HTTPException(status_code=404, detail=f"Categoria com id={produto.categoria_id} não encontrada")
 
-    novo_produto = {
-        "id": next_id,
-        "titulo": produto.titulo,
-        "descricao": produto.descricao,
-        "preco": produto.preco,
-        "categoria": produto.categoria,
-        "vendedor": produto.vendedor,
-        "data_criacao": datetime.now()
-    }
-
-    produtos_db.append(novo_produto)
-    next_id += 1
+    novo_produto = Produto(
+        titulo=produto.titulo,
+        descricao=produto.descricao,
+        preco=produto.preco,
+        vendedor=produto.vendedor,
+        categoria_id=produto.categoria_id
+    )
+    db.add(novo_produto)
+    db.commit()
+    db.refresh(novo_produto)
     return novo_produto
 
 
-@app.get("/produtos/{produto_id}", response_model=ProdutoResponse)
-def buscar_produto(produto_id: int):
-    """
-    Busca um produto pelo ID.
-    - {produto_id} é um path parameter — FastAPI converte para int automaticamente.
-    - Se não encontrar, retorna 404 (Not Found).
-    """
-    for produto in produtos_db:
-        if produto["id"] == produto_id:
-            return produto
+@app.get("/produtos/{produto_id}", response_model=ProdutoResponse, tags=["Produtos"])
+def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
+    """Busca um produto pelo ID."""
+    produto = db.query(Produto).filter(Produto.id == produto_id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    return produto
 
-    raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+@app.put("/produtos/{produto_id}", response_model=ProdutoResponse, tags=["Produtos"])
+def atualizar_produto(produto_id: int, dados: ProdutoUpdate, db: Session = Depends(get_db)):
+    """
+    Atualiza um produto existente.
+    Só altera os campos que foram enviados (não-nulos).
+    """
+    produto = db.query(Produto).filter(Produto.id == produto_id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    # Valida categoria_id se foi enviado
+    if dados.categoria_id is not None:
+        categoria = db.query(Categoria).filter(Categoria.id == dados.categoria_id).first()
+        if not categoria:
+            raise HTTPException(status_code=404, detail=f"Categoria com id={dados.categoria_id} não encontrada")
+
+    dados_dict = dados.model_dump(exclude_unset=True)
+    for campo, valor in dados_dict.items():
+        setattr(produto, campo, valor)
+
+    db.commit()
+    db.refresh(produto)
+    return produto
+
+
+@app.delete("/produtos/{produto_id}", tags=["Produtos"])
+def deletar_produto(produto_id: int, db: Session = Depends(get_db)):
+    """Remove um produto do banco."""
+    produto = db.query(Produto).filter(Produto.id == produto_id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    db.delete(produto)
+    db.commit()
+    return {"message": "Produto removido com sucesso", "id": produto_id}
 
 
 # --- Ponto de entrada para execução direta ---

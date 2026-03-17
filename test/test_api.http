@@ -1,6 +1,7 @@
-### ===================================
-### TESTES API CAMPUSTRADE — LOCAL
-### ===================================
+### ======================================
+### TESTES API CAMPUSTRADE — OFICINA 3
+### CRUD completo com banco de dados
+### ======================================
 
 @baseUrl = http://localhost:8000
 
@@ -11,8 +12,10 @@ GET {{baseUrl}}/health
 ### 2. Página inicial
 GET {{baseUrl}}/
 
-### 3. Listar produtos (deve retornar lista vazia)
+### 3. Listar produtos (pode ter dados de execuções anteriores!)
 GET {{baseUrl}}/produtos
+
+### ---- CRIAR (POST) ----
 
 ### 4. Criar primeiro produto
 POST {{baseUrl}}/produtos
@@ -50,28 +53,65 @@ Content-Type: application/json
     "vendedor": "Ana Costa"
 }
 
-### 7. Listar todos os produtos (agora com 3)
+### ---- LER (GET) ----
+
+### 7. Listar todos (agora com 3 produtos)
 GET {{baseUrl}}/produtos
 
-### 8. Buscar produto por ID
+### 8. Buscar por ID
 GET {{baseUrl}}/produtos/1
 
 ### 9. Buscar produto inexistente (deve retornar 404)
 GET {{baseUrl}}/produtos/999
 
-### 10. Testar validação — preço negativo (deve retornar 422)
+### ---- ATUALIZAR (PUT) ----
+
+### 10. Atualizar preço e descrição do produto 1
+PUT {{baseUrl}}/produtos/1
+Content-Type: application/json
+
+{
+    "preco": 95.00,
+    "descricao": "Brinquedo chines diferente"
+}
+
+### 11. Verificar que atualizou
+GET {{baseUrl}}/produtos/1
+
+### 12. Tentar atualizar produto inexistente (deve retornar 404)
+PUT {{baseUrl}}/produtos/999
+Content-Type: application/json
+
+{
+    "preco": 50.00
+}
+
+### ---- DELETAR (DELETE) ----
+
+### 13. Deletar produto 3
+DELETE {{baseUrl}}/produtos/3
+
+### 14. Verificar que deletou (lista deve ter 2 produtos)
+GET {{baseUrl}}/produtos
+
+### 15. Tentar deletar novamente (deve retornar 404)
+DELETE {{baseUrl}}/produtos/3
+
+### ---- VALIDAÇÕES ----
+
+### 16. Preço negativo (deve retornar 422)
 POST {{baseUrl}}/produtos
 Content-Type: application/json
 
 {
     "titulo": "Produto Inválido",
-    "descricao": "Testando validação de preço negativo no Pydantic.",
+    "descricao": "Testando validação de preço negativo.",
     "preco": -50.00,
     "categoria": "Teste",
     "vendedor": "Teste"
 }
 
-### 11. Testar validação — título muito curto (deve retornar 422)
+### 17. Título muito curto (deve retornar 422)
 POST {{baseUrl}}/produtos
 Content-Type: application/json
 
@@ -82,3 +122,10 @@ Content-Type: application/json
     "categoria": "Teste",
     "vendedor": "Teste"
 }
+
+### ---- TESTE DE PERSISTÊNCIA ----
+### Pare o servidor (Ctrl+C), reinicie (uvicorn main:app --reload)
+### e execute o teste abaixo. Os dados devem continuar lá!
+
+### 18. Listar produtos após reiniciar servidor
+GET {{baseUrl}}/produtos
