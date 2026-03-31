@@ -1,0 +1,8 @@
+Recomendando usar
+
+APP SERVICE -> FRONT
+WEB APP -> BACKEND
+
+cors é importante (não entendi o que é exatmante)
+
+CI CD -> deploy automático só de fazer push na branch main
